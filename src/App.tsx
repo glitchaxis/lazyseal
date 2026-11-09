@@ -4,12 +4,15 @@ import { Sidebar } from "@/components/layout/Sidebar"
 import { ChatView } from "@/components/views/ChatView"
 import { ModelsView } from "@/components/views/ModelsView"
 import { SettingsView } from "@/components/views/SettingsView"
+import { McpView } from "@/components/views/McpView"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { useChats } from "@/hooks/useChats"
 import { useModels } from "@/hooks/useModels"
+import { Toaster } from "@/components/ui/toast"
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState<"chat" | "models" | "settings">("chat")
+  // 2. Добавляем "mcp" в типы вкладок
+  const [currentTab, setCurrentTab] = useState<"chat" | "models" | "settings" | "mcp">("chat")
   const [model, setModel] = useState("")
   const [useReasoning, setUseReasoning] = useState(true)
   const [isFilesPanelOpen, setIsFilesPanelOpen] = useState(false)
@@ -64,57 +67,57 @@ export function App() {
         />
 
         <div className="flex flex-1 flex-col overflow-hidden">
-          <Header
-            currentTab={currentTab}
-            isFilesPanelOpen={isFilesPanelOpen}
-            setIsFilesPanelOpen={setIsFilesPanelOpen}
-          />
+          <Header currentTab={currentTab} />
 
-<main 
-  key={currentTab}
-  className={`flex-1 flex flex-col bg-background p-6 ${
-    currentTab === "chat" ? "overflow-hidden" : "overflow-y-auto"
-  }`}
-  style={{ animation: "fadeIn 0.2s ease-in-out" }}
->
-  {currentTab === "chat" && (
-    <ChatView
-      messages={currentMessages}
-      isLoading={isLoading}
-      onSendMessage={(text) => sendMessage(text, model, useReasoning)}
-      model={model}
-      setModel={setModel}
-      localModels={localModels}
-      onSelectModel={(path) => startModelServer(path)}
-      useReasoning={useReasoning}
-      setUseReasoning={setUseReasoning}
-      isFilesPanelOpen={isFilesPanelOpen}
-      setIsFilesPanelOpen={setIsFilesPanelOpen}
-    />
-  )}
+          <main 
+            key={currentTab}
+            className={`flex-1 flex flex-col bg-background p-6 ${
+              currentTab === "chat" ? "overflow-hidden" : "overflow-y-auto"
+            }`}
+            style={{ animation: "fadeIn 0.2s ease-in-out" }}
+          >
+            {currentTab === "chat" && (
+              <ChatView
+                messages={currentMessages}
+                isLoading={isLoading}
+                onSendMessage={(text) => sendMessage(text, model, useReasoning)}
+                model={model}
+                setModel={setModel}
+                localModels={localModels}
+                onSelectModel={(path) => startModelServer(path)}
+                useReasoning={useReasoning}
+                setUseReasoning={setUseReasoning}
+                isFilesPanelOpen={isFilesPanelOpen}
+                setIsFilesPanelOpen={setIsFilesPanelOpen}
+              />
+            )}
 
-  {currentTab === "models" && (
-    <ModelsView
-      searchQuery={hfSearchQuery}
-      setSearchQuery={setHfSearchQuery}
-      models={hfModels}
-      isLoading={isHfLoading}
-      downloads={Object.values(downloads)}
-      localModels={localModels}
-      onSearch={searchHfModels}
-      onDownload={downloadModel}
-      startModelServer={startModelServer}
-    />
-  )}
+            {currentTab === "models" && (
+              <ModelsView
+                searchQuery={hfSearchQuery}
+                setSearchQuery={setHfSearchQuery}
+                models={hfModels}
+                isLoading={isHfLoading}
+                downloads={Object.values(downloads)}
+                localModels={localModels}
+                onSearch={searchHfModels}
+                onDownload={downloadModel}
+                startModelServer={startModelServer}
+              />
+            )}
 
-  {currentTab === "settings" && (
-    <SettingsView
-      activeModelPath={activeModelPath}
-      startModelServer={startModelServer}
-    />
-  )}
-</main>
+            {currentTab === "settings" && (
+              <SettingsView
+                activeModelPath={activeModelPath}
+                startModelServer={startModelServer}
+              />
+            )}
+            {currentTab === "mcp" && (
+              <McpView />
+            )}
+          </main>
         </div>
+        <Toaster />
       </div>
     </SidebarProvider>
   )

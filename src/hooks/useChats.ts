@@ -1,4 +1,13 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import {
+  fetchChatsFromDb,
+  createChatInDb,
+  deleteChatFromDb,
+  fetchMessagesFromDb,
+  saveMessageToDb,
+  updateMessageContentInDb,
+  updateChatTitleInDb,
+} from "@/db"
 
 export type Message = {
   id: string
@@ -25,53 +34,138 @@ export type GenerationOptions = {
 }
 
 export function useChats() {
-  const [chats, setChats] = useState<ChatSession[]>([
-    {
-      id: "1",
-      title: "Новый чат",
-      messages: [],
-      createdAt: Date.now(),
-    },
-  ])
-  const [activeChatId, setActiveChatId] = useState<string>("1")
+  const [chats, setChats] = useState<ChatSession[]>([])
+  const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  const activeChat = chats.find((c: ChatSession) => c.id === activeChatId) || chats[0]
+  // Функция создания нового чата
+  const createNewChat = async (): Promise<ChatSession> => {
+    const newId = Date.now().toString()
+    const newTitle = "Новый чат"
+    const newTimestamp = Date.now()
+
+    await createChatInDb(newId, newTitle)
+
+    const newChat: ChatSession = {
+      id: newId,
+      title: newTitle,
+      messages: [],
+      createdAt: newTimestamp,
+    }
+
+    return newChat
+  }
+
+  // 1. Инициализация базы данных при первом запуске
+  useEffect(() => {
+    let isMounted = true
+
+    async function initDbData() {
+      try {
+        const dbChats = await fetchChatsFromDb()
+
+        if (dbChats.length > 0) {
+          const loadedSessions: ChatSession[] = await Promise.all(
+            dbChats.map(async (c) => {
+              const msgs = await fetchMessagesFromDb(c.id)
+              return {
+                id: c.id,
+                title: c.title,
+                createdAt: c.created_at,
+                messages: msgs.map((m) => ({
+                  id: m.id,
+                  role: m.role as "user" | "assistant" | "system",
+                  content: m.content,
+                  reasoning: m.reasoning || undefined,
+                })),
+              }
+            })
+          )
+
+          if (isMounted) {
+            setChats(loadedSessions)
+            setActiveChatId(loadedSessions[0].id)
+          }
+        } else {
+          // Если БД пустая — создаем дефолтный чат
+          const freshChat = await createNewChat()
+          if (isMounted) {
+            setChats([freshChat])
+            setActiveChatId(freshChat.id)
+          }
+        }
+      } catch (err) {
+        console.error("Ошибка загрузки данных из SQLite:", err)
+        // Фолбэк на случай ошибки подключения к SQLite
+        const fallbackId = Date.now().toString()
+        const fallbackChat: ChatSession = {
+          id: fallbackId,
+          title: "Новый чат",
+          messages: [],
+          createdAt: Date.now(),
+        }
+        if (isMounted) {
+          setChats([fallbackChat])
+          setActiveChatId(fallbackId)
+        }
+      }
+    }
+
+    initDbData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  // Текущий активный чат и его сообщения
+  const activeChat = chats.find((c) => c.id === activeChatId) || chats[0]
   const currentMessages = activeChat ? activeChat.messages : []
 
-  const handleNewChat = () => {
-    const newChat: ChatSession = {
-      id: Date.now().toString(),
-      title: "Новый чат",
-      messages: [],
-      createdAt: Date.now(),
+  // Создание нового чата кнопкой '+'
+  const handleNewChat = async () => {
+    try {
+      const newChat = await createNewChat()
+      setChats((prev) => [newChat, ...prev])
+      setActiveChatId(newChat.id)
+    } catch (err) {
+      console.error("Ошибка создания чата:", err)
     }
-    setChats((prev: ChatSession[]) => [newChat, ...prev])
-    setActiveChatId(newChat.id)
   }
 
-  const handleDeleteChat = (id: string) => {
-    setChats((prev: ChatSession[]) => {
-      const filtered = prev.filter((c: ChatSession) => c.id !== id)
-      if (filtered.length === 0) {
-        const fresh: ChatSession = { id: Date.now().toString(), title: "Новый чат", messages: [], createdAt: Date.now() }
-        setActiveChatId(fresh.id)
-        return [fresh]
-      }
-      if (activeChatId === id) {
-        setActiveChatId(filtered[0].id)
-      }
-      return filtered
-    })
+  // Удаление чата
+  const handleDeleteChat = async (id: string) => {
+    try {
+      await deleteChatFromDb(id)
+
+      setChats((prev) => {
+        const filtered = prev.filter((c) => c.id !== id)
+        if (filtered.length === 0) {
+          createNewChat().then((fresh) => {
+            setChats([fresh])
+            setActiveChatId(fresh.id)
+          })
+          return []
+        }
+        if (activeChatId === id) {
+          setActiveChatId(filtered[0].id)
+        }
+        return filtered
+      })
+    } catch (err) {
+      console.error("Ошибка удаления чата из SQLite:", err)
+    }
   }
 
+  // Отправка сообщения
   const sendMessage = async (
     text: string,
     model: string,
     useReasoning: boolean,
     options?: GenerationOptions
   ) => {
-    if (!text.trim() || isLoading) return
+    const targetChatId = activeChatId || (chats[0] ? chats[0].id : null)
+    if (!text.trim() || isLoading || !targetChatId) return
 
     const userMessageId = Date.now().toString()
     const assistantMessageId = (Date.now() + 1).toString()
@@ -85,13 +179,33 @@ export function useChats() {
       isStreaming: true,
     }
 
-    setChats((prev: ChatSession[]) =>
-      prev.map((chat: ChatSession) => {
-        if (chat.id === activeChatId) {
-          const title = chat.messages.length === 0 ? text.slice(0, 30) + "..." : chat.title
+    let updatedTitle: string | null = null
+    const targetChat = chats.find((c) => c.id === targetChatId)
+    if (targetChat && targetChat.messages.length === 0) {
+      updatedTitle = text.slice(0, 30) + (text.length > 30 ? "..." : "")
+    }
+
+    if (updatedTitle) {
+      try {
+        await updateChatTitleInDb(targetChatId, updatedTitle)
+      } catch (e) {
+        console.error(e)
+      }
+    }
+
+    try {
+      await saveMessageToDb(userMessageId, targetChatId, "user", text)
+      await saveMessageToDb(assistantMessageId, targetChatId, "assistant", "")
+    } catch (e) {
+      console.error("Ошибка сохранения в БД:", e)
+    }
+
+    setChats((prev) =>
+      prev.map((chat) => {
+        if (chat.id === targetChatId) {
           return {
             ...chat,
-            title,
+            title: updatedTitle || chat.title,
             messages: [...chat.messages, userMessage, initialAssistantMessage],
           }
         }
@@ -106,7 +220,10 @@ export function useChats() {
         ...(options?.systemPrompt
           ? [{ role: "system", content: options.systemPrompt }]
           : []),
-        ...activeChat.messages.map((m: Message) => ({ role: m.role, content: m.content })),
+        ...(targetChat ? targetChat.messages : []).map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
         { role: "user", content: text },
       ]
 
@@ -153,7 +270,7 @@ export function useChats() {
           try {
             const parsed = JSON.parse(dataStr)
             const delta = parsed.choices?.[0]?.delta?.content || ""
-            
+
             if (delta) {
               accumulatedContent += delta
 
@@ -173,12 +290,12 @@ export function useChats() {
                 }
               }
 
-              setChats((prev: ChatSession[]) =>
-                prev.map((chat: ChatSession) => {
-                  if (chat.id === activeChatId) {
+              setChats((prev) =>
+                prev.map((chat) => {
+                  if (chat.id === targetChatId) {
                     return {
                       ...chat,
-                      messages: chat.messages.map((m: Message) =>
+                      messages: chat.messages.map((m) =>
                         m.id === assistantMessageId
                           ? {
                               ...m,
@@ -198,31 +315,43 @@ export function useChats() {
           }
         }
       }
+
+      try {
+        await updateMessageContentInDb(assistantMessageId, accumulatedContent, accumulatedReasoning)
+      } catch (e) {
+        console.error(e)
+      }
     } catch (error) {
       console.error("Ошибка при генерации ответа:", error)
-      setChats((prev: ChatSession[]) =>
-        prev.map((chat: ChatSession) => {
-          if (chat.id === activeChatId) {
+      const errorMsg = "⚠️ Ошибка подключения к локальному серверу llama.cpp."
+
+      setChats((prev) =>
+        prev.map((chat) => {
+          if (chat.id === targetChatId) {
             return {
               ...chat,
-              messages: chat.messages.map((m: Message) =>
-                m.id === assistantMessageId
-                  ? { ...m, content: "⚠️ Ошибка подключения к локальному серверу llama.cpp." }
-                  : m
+              messages: chat.messages.map((m) =>
+                m.id === assistantMessageId ? { ...m, content: errorMsg } : m
               ),
             }
           }
           return chat
         })
       )
+      try {
+        await updateMessageContentInDb(assistantMessageId, errorMsg)
+      } catch (e) {
+        console.error(e)
+      }
     } finally {
       setIsLoading(false)
-      setChats((prev: ChatSession[]) =>
-        prev.map((chat: ChatSession) => {
-          if (chat.id === activeChatId) {
+
+      setChats((prev) =>
+        prev.map((chat) => {
+          if (chat.id === targetChatId) {
             return {
               ...chat,
-              messages: chat.messages.map((m: Message) =>
+              messages: chat.messages.map((m) =>
                 m.id === assistantMessageId ? { ...m, isStreaming: false } : m
               ),
             }

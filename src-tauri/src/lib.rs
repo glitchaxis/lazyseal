@@ -149,7 +149,7 @@ async fn start_llama_server(
     let server_ctx = context_size.unwrap_or_else(|| "4096".to_string());
     let use_gpu = gpu_acceleration.unwrap_or(true);
 
-    let mut cmd = Command::new("llama-server.exe");
+    let mut cmd = Command::new("llama-server");
     cmd.arg("-m")
         .arg(&model_path)
         .arg("--port")
@@ -208,6 +208,8 @@ async fn open_models_folder(window: Window) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_dialog::init())
+    .   plugin(tauri_plugin_fs::init())
         .manage(LlamaProcess(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             download_model,

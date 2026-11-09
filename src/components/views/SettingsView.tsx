@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import {
   SaveIcon,
   FolderOpenIcon,
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { ServerSettings } from "@/hooks/useModels"
+import { useSettings } from "@/hooks/useSettings"
 
 type SettingsViewProps = {
   activeModelPath: string | null
@@ -24,35 +25,33 @@ type SettingsViewProps = {
 }
 
 export function SettingsView({ activeModelPath, startModelServer }: SettingsViewProps) {
-  const [theme, setTheme] = useState<"dark" | "light" | "system">("dark")
-  const [port, setPort] = useState(() => localStorage.getItem("lazyseal_port") || "8080")
-  const [threads, setThreads] = useState(() => localStorage.getItem("lazyseal_threads") || "8")
-  const [contextSize, setContextSize] = useState(() => localStorage.getItem("lazyseal_contextSize") || "4096")
-  const [gpuAcceleration, setGpuAcceleration] = useState(
-    () => localStorage.getItem("lazyseal_gpuAcceleration") !== "false"
-  )
-
-  const [temperature, setTemperature] = useState("0.7")
-  const [maxTokens, setMaxTokens] = useState("2048")
-  const [topP, setTopP] = useState("0.9")
-  const [topK, setTopK] = useState("40")
-  const [repeatPenalty, setRepeatPenalty] = useState("1.1")
-  const [systemPrompt, setSystemPrompt] = useState("Ты — полезный локальный ИИ-ассистент.")
+  const {
+    theme,
+    setTheme,
+    port,
+    setPort,
+    threads,
+    setThreads,
+    contextSize,
+    setContextSize,
+    gpuAcceleration,
+    setGpuAcceleration,
+    temperature,
+    setTemperature,
+    maxTokens,
+    setMaxTokens,
+    topP,
+    setTopP,
+    topK,
+    setTopK,
+    repeatPenalty,
+    setRepeatPenalty,
+    systemPrompt,
+    setSystemPrompt,
+    saveSettings,
+  } = useSettings()
 
   const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    const root = document.documentElement
-    if (theme === "dark") {
-      root.classList.add("dark")
-    } else if (theme === "light") {
-      root.classList.remove("dark")
-    } else {
-      const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-      if (systemDark) root.classList.add("dark")
-      else root.classList.remove("dark")
-    }
-  }, [theme])
 
   const handleOpenFolder = async () => {
     try {
@@ -66,10 +65,7 @@ export function SettingsView({ activeModelPath, startModelServer }: SettingsView
   }
 
   const handleSave = () => {
-    localStorage.setItem("lazyseal_port", port)
-    localStorage.setItem("lazyseal_threads", threads)
-    localStorage.setItem("lazyseal_contextSize", contextSize)
-    localStorage.setItem("lazyseal_gpuAcceleration", String(gpuAcceleration))
+    saveSettings()
 
     if (activeModelPath) {
       startModelServer(activeModelPath, {

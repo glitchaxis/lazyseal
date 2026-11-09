@@ -5,6 +5,27 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "sql:default"
+    "dialog:default",
+    "dialog:allow-save",
+    "sql:default",
+    "fs:default",
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$HOME/**" },
+        { "path": "**/*" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$HOME/**" },
+        { "path": "**/*" }
+      ]
+    }
   ]
 }
